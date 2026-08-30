@@ -3,22 +3,82 @@ import { Track } from '../types/index.js';
 
 export class YouTubeService {
   /**
+   * Clean and normalize raw YouTube titles to extract readable Song Name & Artist
+   */
+  public static cleanMetadata(title: string, authorName: string = ''): { cleanTitle: string; cleanArtist: string } {
+    let clean = title
+      // Remove tags like (Official Video), [4K], (Lyric Video), (Audio), etc.
+      .replace(/\s*[\[\(](official\s*(music\s*video|video|audio|lyric\s*video|hd|4k|remastered)?|lyrics?|audio|visualizer|full\s*song)[\]\)]/gi, '')
+      .replace(/\|.*$/g, '') // remove trailing channel watermarks e.g. "| T-Series"
+      .replace(/\b(4k|hd|remastered|full\s*hd|video|audio)\b/gi, '')
+      .trim();
+
+    let cleanArtist = authorName.replace(/ - Topic$/i, '').replace(/VEVO$/i, '').trim() || 'Unknown Artist';
+    let cleanTitle = clean;
+
+    // Detect "Artist - Title" format in video title
+    if (clean.includes(' - ')) {
+      const parts = clean.split(' - ');
+      if (parts.length >= 2) {
+        cleanArtist = parts[0].trim();
+        cleanTitle = parts.slice(1).join(' - ').trim();
+      }
+    }
+
+    return { cleanTitle, cleanArtist };
+  }
+
+  /**
+   * Resolve high-speed direct audio stream URL with public mirror fallback
+   */
+  public static async getDirectAudioUrl(videoId: string): Promise<string | null> {
+    const endpoints = [
+      `https://pipedapi.kavin.rocks/streams/${videoId}`,
+      `https://api.piped.privacydev.net/streams/${videoId}`,
+      `https://inv.nadeko.net/api/v1/videos/${videoId}`,
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(ep, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data: any = await res.json();
+          if (data.audioStreams && data.audioStreams[0]?.url) {
+            return data.audioStreams[0].url;
+          }
+          if (data.adaptiveFormats) {
+            const aud = data.adaptiveFormats.find((f: any) => f.type?.startsWith('audio/'));
+            if (aud?.url) return aud.url;
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /**
    * Search YouTube for songs/videos
    */
   public static async search(query: string, limit = 15): Promise<Track[]> {
     try {
-      const searchResults = await ytSearch(query);
-      const videos = searchResults.videos.slice(0, limit);
+      const searchResults = await ytSearch(`${query} song`);
+      const videos = (searchResults.videos || []).filter((v) => v.seconds > 60 && v.seconds < 900); // 1 min to 15 min
 
-      return videos.map((v) => ({
-        id: v.videoId,
-        title: v.title,
-        artist: v.author?.name || 'Unknown Artist',
-        duration: v.seconds || 0,
-        thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-        url: v.url,
-        addedAt: Date.now(),
-      }));
+      return videos.slice(0, limit).map((v) => {
+        const { cleanTitle, cleanArtist } = this.cleanMetadata(v.title, v.author?.name);
+        return {
+          id: v.videoId,
+          title: cleanTitle || v.title,
+          artist: cleanArtist || v.author?.name || 'Unknown Artist',
+          duration: v.seconds || 0,
+          thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+          url: v.url,
+          addedAt: Date.now(),
+        };
+      });
     } catch (error) {
       console.error('YouTube search error:', error);
       return [];
@@ -33,10 +93,11 @@ export class YouTubeService {
       const result = await ytSearch({ videoId });
       if (!result) return null;
 
+      const { cleanTitle, cleanArtist } = this.cleanMetadata(result.title, result.author?.name);
       return {
         id: result.videoId,
-        title: result.title,
-        artist: result.author?.name || 'Unknown Artist',
+        title: cleanTitle || result.title,
+        artist: cleanArtist || result.author?.name || 'Unknown Artist',
         duration: result.seconds || 0,
         thumbnail: result.thumbnail || `https://i.ytimg.com/vi/${result.videoId}/hqdefault.jpg`,
         url: result.url,
@@ -49,113 +110,62 @@ export class YouTubeService {
   }
 
   /**
-   * Resolve high-speed direct audio stream URL with Piped & Invidious multi-cluster
-   */
-  public static async getDirectAudioUrl(videoId: string): Promise<string | null> {
-    // 1. Try High-Speed Piped APIs (Direct audioStreams extraction)
-    const pipedEndpoints = [
-      `https://pipedapi.kavin.rocks/streams/${videoId}`,
-      `https://api.piped.privacydev.net/streams/${videoId}`,
-      `https://pipedapi.tokhmi.xyz/streams/${videoId}`,
-      `https://piped-api.garudalinux.org/streams/${videoId}`,
-    ];
-
-    for (const endpoint of pipedEndpoints) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-
-        const res = await fetch(endpoint, {
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        });
-        clearTimeout(timeout);
-
-        if (res.ok) {
-          const data: any = await res.json();
-          if (data.audioStreams && data.audioStreams.length > 0) {
-            // Sort by bitrate descending
-            data.audioStreams.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-            const bestStream = data.audioStreams[0]?.url;
-            if (bestStream) return bestStream;
-          }
-        }
-      } catch (_) {
-        // Try next endpoint
-      }
-    }
-
-    // 2. Try High-Uptime Invidious Mirrors
-    const invidiousEndpoints = [
-      `https://inv.nadeko.net/api/v1/videos/${videoId}`,
-      `https://yewtu.be/api/v1/videos/${videoId}`,
-      `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
-      `https://invidious.jing.rocks/api/v1/videos/${videoId}`,
-      `https://vid.puffyan.us/api/v1/videos/${videoId}`,
-    ];
-
-    for (const endpoint of invidiousEndpoints) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-
-        const res = await fetch(endpoint, {
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        });
-        clearTimeout(timeout);
-
-        if (res.ok) {
-          const data: any = await res.json();
-          const audioFormats = data.adaptiveFormats?.filter(
-            (f: any) =>
-              f.type?.startsWith('audio/') ||
-              f.container === 'm4a' ||
-              f.container === 'webm' ||
-              f.container === 'mp4'
-          );
-
-          if (audioFormats && audioFormats.length > 0) {
-            audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-            const bestAudio = audioFormats[0].url;
-            if (bestAudio) return bestAudio;
-          }
-        }
-      } catch (_) {
-        // Try next mirror
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Smart Auto-Queue Recommendation Algorithm (like YouTube's algorithm)
+   * Smart, High-Relevance Auto-Queue Music Recommendation Algorithm
+   * Intelligently discovers hit tracks by the same artist & similar genre tracks
    */
   public static async getRecommendations(currentTrack: Track, playedHistoryIds: string[] = []): Promise<Track[]> {
     try {
-      const cleanedTitle = currentTrack.title
-        .replace(/\b(official\s*(video|audio|music\s*video|lyric\s*video)?|4k|hd|remastered|lyrics?|full\s*song)\b/gi, '')
-        .replace(/[\[\(\{\]\)\}]/g, ' ')
-        .trim();
-
-      const searchQuery = `${currentTrack.artist} ${cleanedTitle} similar songs`;
-      const searchResults = await ytSearch(searchQuery);
-
+      const { cleanTitle, cleanArtist } = this.cleanMetadata(currentTrack.title, currentTrack.artist);
       const historySet = new Set(playedHistoryIds);
       historySet.add(currentTrack.id);
 
-      const candidates = searchResults.videos
-        .filter((v) => !historySet.has(v.videoId) && v.seconds > 60 && v.seconds < 900)
-        .map((v) => ({
-          id: v.videoId,
-          title: v.title,
-          artist: v.author?.name || 'Unknown Artist',
-          duration: v.seconds || 0,
-          thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-          url: v.url,
-          addedAt: Date.now(),
-        }));
+      // Perform parallel high-relevance searches:
+      // 1. Same artist top hits
+      // 2. Similar songs / playlist radio mix
+      const [artistHitsRes, relatedMixRes] = await Promise.allSettled([
+        ytSearch(`${cleanArtist} top hit songs audio`),
+        ytSearch(`${cleanArtist} ${cleanTitle} radio playlist songs`),
+      ]);
+
+      const candidates: Track[] = [];
+      const seenIds = new Set<string>();
+
+      const processVideos = (videos: any[]) => {
+        for (const v of videos) {
+          if (!v || !v.videoId || historySet.has(v.videoId) || seenIds.has(v.videoId)) continue;
+          // Filter out full albums (> 10 mins) and micro teasers (< 60 secs)
+          if (v.seconds < 75 || v.seconds > 600) continue;
+
+          seenIds.add(v.videoId);
+          const meta = this.cleanMetadata(v.title, v.author?.name);
+
+          candidates.push({
+            id: v.videoId,
+            title: meta.cleanTitle || v.title,
+            artist: meta.cleanArtist || v.author?.name || cleanArtist,
+            duration: v.seconds || 0,
+            thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+            url: v.url,
+            addedAt: Date.now(),
+          });
+        }
+      };
+
+      if (artistHitsRes.status === 'fulfilled' && artistHitsRes.value.videos) {
+        processVideos(artistHitsRes.value.videos.slice(0, 10));
+      }
+
+      if (relatedMixRes.status === 'fulfilled' && relatedMixRes.value.videos) {
+        processVideos(relatedMixRes.value.videos.slice(0, 10));
+      }
+
+      // If candidates are sparse, fallback to broad search
+      if (candidates.length < 5) {
+        const broadRes = await ytSearch(`${cleanTitle} song`);
+        if (broadRes && broadRes.videos) {
+          processVideos(broadRes.videos.slice(0, 8));
+        }
+      }
 
       return candidates.slice(0, 10);
     } catch (error) {

@@ -11,7 +11,7 @@ class SocketService {
   };
   private ntpInterval: number | null = null;
 
-  public connect(url: string = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'): Socket {
+  public connect(url: string = import.meta.env.VITE_SERVER_URL || 'https://music-jam-e4fx.onrender.com'): Socket {
     if (this.socket) return this.socket;
 
     this.socket = io(url, {

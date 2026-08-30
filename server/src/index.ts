@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -20,6 +20,17 @@ app.use(
 );
 
 app.use(express.json());
+
+// Root health check endpoint (e.g. for Render or browser testing)
+app.get(['/', '/health'], (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    message: '🎵 Rave Sync Backend Server is running healthy!',
+    serverTime: Date.now(),
+    service: 'Rave Sync Server',
+    uptime: Math.floor(process.uptime()),
+  });
+});
 
 // API routes
 app.use('/api', apiRouter);
@@ -43,6 +54,6 @@ httpServer.listen(PORT, () => {
   console.log(`=========================================`);
   console.log(`🎵 Rave Sync Backend Server running on port ${PORT}`);
   console.log(`📡 WebSocket endpoint ready for NTP sync & rooms`);
-  console.log(`🔍 YouTube search API: http://localhost:${PORT}/api/search?q=query`);
+  console.log(`🔍 Health check: http://localhost:${PORT}/health`);
   console.log(`=========================================`);
 });
