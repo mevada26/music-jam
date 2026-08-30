@@ -8,7 +8,9 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       },
       "bundleIdentifier": "com.rave.watchparty"
     },
@@ -18,7 +20,8 @@
       "permissions": [
         "WAKE_LOCK",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "plugins": [
@@ -28,6 +31,11 @@
           "microphonePermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a9943805-4741-4564-b612-34369a3090f2"
+      }
+    }
   }
 }

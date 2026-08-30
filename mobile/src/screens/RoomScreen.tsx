@@ -109,20 +109,44 @@ export const RoomScreen: React.FC<RoomScreenProps> = ({
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  // Host Playback Actions
+  // Host Playback Actions with Optimistic Fast Response
   const handlePlay = () => {
+    setRoom((prev) => ({
+      ...prev,
+      playbackState: { ...prev.playbackState, status: 'PLAYING', serverEpochTime: Date.now() },
+    }));
     mobileSocketService.updatePlayback(room.code, { status: 'PLAYING', currentTime });
   };
 
   const handlePause = () => {
+    setRoom((prev) => ({
+      ...prev,
+      playbackState: { ...prev.playbackState, status: 'PAUSED', serverEpochTime: Date.now() },
+    }));
     mobileSocketService.updatePlayback(room.code, { status: 'PAUSED', currentTime });
   };
 
   const handleSkip = () => {
+    // 0ms Optimistic Queue Pop & Next Track Start
+    if (room.queue.length > 0) {
+      const nextTrack = room.queue[0];
+      setRoom((prev) => ({
+        ...prev,
+        queue: prev.queue.slice(1),
+        playbackState: {
+          ...prev.playbackState,
+          currentTrack: nextTrack,
+          status: 'PLAYING',
+          currentTime: 0,
+          serverEpochTime: Date.now(),
+        },
+      }));
+    }
     mobileSocketService.skipTrack(room.code);
   };
 
   const handleRestart = () => {
+    setCurrentTime(0);
     mobileSocketService.updatePlayback(room.code, { currentTime: 0, status: 'PLAYING' });
   };
 
@@ -147,16 +171,35 @@ export const RoomScreen: React.FC<RoomScreenProps> = ({
     mobileSocketService.resolveSuggestion(room.code, suggestionId, action);
   };
 
-  // Queue Actions
+  // Queue Actions with Instant Local Response
   const handleRemoveFromQueue = (index: number) => {
+    setRoom((prev) => ({
+      ...prev,
+      queue: prev.queue.filter((_, i) => i !== index),
+    }));
     mobileSocketService.removeFromQueue(room.code, index);
   };
 
   const handlePlayNow = (track: Track) => {
+    // Optimistically transition track immediately with 0ms delay
+    setRoom((prev) => ({
+      ...prev,
+      playbackState: {
+        ...prev.playbackState,
+        currentTrack: track,
+        status: 'PLAYING',
+        currentTime: 0,
+        serverEpochTime: Date.now(),
+      },
+    }));
     mobileSocketService.playTrack(room.code, track);
   };
 
   const handleAddToQueue = (track: Track) => {
+    setRoom((prev) => ({
+      ...prev,
+      queue: [...prev.queue, track],
+    }));
     mobileSocketService.addToQueue(room.code, track);
   };
 

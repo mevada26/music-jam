@@ -43,21 +43,41 @@ interface NowPlayingDeckProps {
   roomCode: string;
 }
 
-// Injected high-performance Ad-Blocker & Instant-Skip script for YouTube WebViews
-const AD_BLOCK_INJECTED_JS = `
+// Injected high-performance Ad-Blocker & Continuous Background Lockscreen script
+const BACKGROUND_AND_AD_BLOCK_JS = `
   (function() {
-    const killAds = () => {
-      // 1. Auto-click all YouTube Skip Ad buttons
+    // 1. Prevent YouTube from pausing when screen is locked or app is in background
+    try {
+      Object.defineProperty(document, 'hidden', { value: false, writable: false });
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
+      Object.defineProperty(document, 'webkitVisibilityState', { value: 'visible', writable: false });
+      Object.defineProperty(document, 'webkitHidden', { value: false, writable: false });
+    } catch(e) {}
+
+    const stopEvent = (e) => {
+      if (e && typeof e.stopImmediatePropagation === 'function') {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('visibilitychange', stopEvent, true);
+    document.addEventListener('visibilitychange', stopEvent, true);
+    window.addEventListener('webkitvisibilitychange', stopEvent, true);
+    document.addEventListener('webkitvisibilitychange', stopEvent, true);
+    window.addEventListener('blur', stopEvent, true);
+    window.addEventListener('pagehide', stopEvent, true);
+
+    const killAdsAndKeepPlaying = () => {
+      const video = document.querySelector('video');
+      const isAd = document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
+      
+      // Auto-skip ads
       const skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-overlay-close-button');
       skipBtns.forEach(b => {
-        if (b && typeof b.click === 'function') {
-          b.click();
-        }
+        if (b && typeof b.click === 'function') b.click();
       });
 
-      // 2. Fast-forward video ad in 0.01 seconds
-      const isAd = document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
-      const video = document.querySelector('video');
       if (isAd && video) {
         video.muted = true;
         video.playbackRate = 16.0;
@@ -66,14 +86,14 @@ const AD_BLOCK_INJECTED_JS = `
         }
       }
 
-      // 3. Remove banner ad overlays
+      // Hide ad banners
       const adOverlays = document.querySelectorAll('.ytp-ad-module, .ytp-ad-image-overlay, .ytp-ad-overlay-container, #player-ads, .ytp-ad-text-overlay');
       adOverlays.forEach(el => {
         if (el) el.style.display = 'none';
       });
     };
 
-    setInterval(killAds, 80);
+    setInterval(killAdsAndKeepPlaying, 80);
   })();
   true;
 `;
@@ -170,7 +190,7 @@ export const NowPlayingDeck: React.FC<NowPlayingDeckProps> = ({
         <View style={styles.rightBadges}>
           <View style={styles.adFreeBadge}>
             <ShieldCheck size={11} color="#10b981" />
-            <Text style={styles.adFreeText}>Ad-Free</Text>
+            <Text style={styles.adFreeText}>Background Active</Text>
           </View>
 
           {track && onOpenVideo && (
@@ -189,10 +209,10 @@ export const NowPlayingDeck: React.FC<NowPlayingDeckProps> = ({
             <Image source={{ uri: track.thumbnail }} style={styles.artwork} resizeMode="cover" />
             <View style={styles.audioBadge}>
               <Radio size={11} color="#06b6d4" />
-              <Text style={styles.audioBadgeText}>High-Fidelity Audio • Ad-Free</Text>
+              <Text style={styles.audioBadgeText}>Audio Mode • Background Enabled</Text>
             </View>
 
-            {/* Hardware-Accelerated Audio Engine Player keyed to track.id to prevent song audio bleed */}
+            {/* Hardware-Accelerated Audio Engine Player keyed to track.id with Background Keep-Playing Hack */}
             <View style={styles.hiddenAudioEngine}>
               <YoutubePlayer
                 key={track.id}
@@ -224,7 +244,7 @@ export const NowPlayingDeck: React.FC<NowPlayingDeckProps> = ({
                   androidLayerType: 'hardware',
                   javaScriptEnabled: true,
                   domStorageEnabled: true,
-                  injectedJavaScript: AD_BLOCK_INJECTED_JS,
+                  injectedJavaScript: BACKGROUND_AND_AD_BLOCK_JS,
                 }}
                 initialPlayerParams={{
                   controls: false,

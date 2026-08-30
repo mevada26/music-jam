@@ -1,3 +1,4 @@
+import { Audio } from 'expo-av';
 import { PlaybackState, Track } from '../types';
 import { mobileSocketService } from './socketService';
 
@@ -17,6 +18,23 @@ class MobileAudioSyncEngine {
   private currentTrackId: string | null = null;
   private lastTrackChangeTime: number = 0;
   private lastSeekTime: number = 0;
+  private isAudioSessionConfigured: boolean = false;
+
+  public async initBackgroundAudioSession() {
+    if (this.isAudioSessionConfigured) return;
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      this.isAudioSessionConfigured = true;
+    } catch (e) {
+      console.warn('Background audio session initialization notice:', e);
+    }
+  }
 
   public setRoomCode(code: string) {
     this.currentRoomCode = code;
@@ -27,6 +45,8 @@ class MobileAudioSyncEngine {
   }
 
   public applyPlaybackState(state: PlaybackState) {
+    this.initBackgroundAudioSession();
+
     if (state.currentTrack?.id !== this.currentTrackId) {
       this.currentTrackId = state.currentTrack?.id || null;
       this.lastTrackChangeTime = Date.now();
@@ -100,7 +120,7 @@ class MobileAudioSyncEngine {
     if (this.syncTimer) return;
     this.syncTimer = setInterval(() => {
       this.synchronizePosition();
-    }, 400);
+    }, 450);
   }
 
   public subscribe(cb: MobilePlayerStateCallback): () => void {

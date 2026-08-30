@@ -43,10 +43,10 @@ export function getAutoDetectedServerUrl(): string {
   }
 
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3001';
+    return 'https://music-jam-e4fx.onrender.com';
   }
 
-  return 'http://localhost:3001';
+  return 'https://music-jam-e4fx.onrender.com';
 }
 
 export const DEFAULT_SERVER_URL = getAutoDetectedServerUrl();
