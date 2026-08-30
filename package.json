@@ -1,0 +1,24 @@
+{
+  "name": "rave-music-app",
+  "version": "1.0.0",
+  "description": "Rave-inspired synchronized music & watch-party app with NTP speaker sync, audio-first background playback, interactive chat suggestions, and YouTube recommendations auto-queue.",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install && npm --prefix mobile install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev:mobile": "npm --prefix mobile run start",
+    "dev:android": "npm --prefix mobile run android",
+    "dev:ios": "npm --prefix mobile run ios"
+  },
+  "keywords": [
+    "rave",
+    "watch-party",
+    "react-native",
+    "music-sync",
+    "speaker-sync",
+    "youtube-sync",
+    "socketio"
+  ],
+  "author": "",
+  "license": "MIT"
+}
